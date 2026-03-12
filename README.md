@@ -2,9 +2,10 @@
 # Dashboard Project Overview
 This DevOps pipeline is orchestrated by Jenkins, utilizing Git repositories. It is designed to showcase skills in (CI/CD) (IAC) and high-availability, auto-scaling, pipeline integration and debug.
 
-## Demo
-[https://dashboard.ikocs.net](https://dashboard.ikocs.net)
-Username: guest, Password: guest
+## Dear Visitors, due to budget reason, active demo is no longer available.
+### You can see all my success run screenshots in this documentation and understand the workflow.
+### I merge 3 repos' files into 1 repo for archive purpose, but they were meant to be 3 repos independently.
+
 ![DashboardScreenshot](guides/10_grafana_result.png)
 
 ## Project Structure
