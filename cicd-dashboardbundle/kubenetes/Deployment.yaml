@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard-app
+  namespace: dashboard
+spec:
+  replicas: 4
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 2  # Ensures 2 pod is unavailable during the update
+      maxSurge: 1        # Allows an additional pod to be created temporarily
+  selector:
+    matchLabels:
+      app: dashboard-app
+  template:
+    metadata:
+      labels:
+        app: dashboard-app
+    spec:
+      containers:
+      - name: dashboard-app
+        image: nikoc2016/dashboard-app:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 9090
+        - containerPort: 3000
+---
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: dashboard-app
+  namespace: dashboard
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: dashboard-app
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 100

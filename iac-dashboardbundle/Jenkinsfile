@@ -1,0 +1,59 @@
+pipeline {
+    agent any
+    
+    environment {
+        TF_VAR_region = 'us-west-1'
+        SECRET_DIR = '/tmp/dashboard_secrets'
+        SSH_KEY = 'ikocs-california.pem'
+        S3_SERCRET = '.passwd-s3fs'
+    }
+
+    stages {
+        stage('Export Credentials') {
+            steps {
+                sh 'mkdir -p "${SECRET_DIR}"'
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS']]) {
+                    script {
+                        env.AWS_ACCESS_KEY_ID = "${AWS_ACCESS_KEY_ID}"
+                        env.AWS_SECRET_ACCESS_KEY = "${AWS_SECRET_ACCESS_KEY}"
+                    }
+                    sh 'echo ${AWS_ACCESS_KEY_ID}:${AWS_SECRET_ACCESS_KEY} > "${SECRET_DIR}/${S3_SERCRET}"'
+                    sh 'chmod 600 "${SECRET_DIR}/${S3_SERCRET}"'
+                }
+                withCredentials([file(credentialsId: 'ikocs-california', variable: 'PEM_PATH')]) {
+                    sh 'cp "$PEM_PATH" "${SECRET_DIR}/${SSH_KEY}"'
+                    sh 'chmod 600 "${SECRET_DIR}/${SSH_KEY}"'
+                }
+            }
+        }
+        
+        stage('Checkout Code') {
+            steps {
+                git branch: 'deploy', url: 'https://git.ikocs.net/root/iac-dashboardbundle.git'
+            }
+        }
+        stage('Terraform Init') {
+            steps {
+                sh 'terraform init'
+            }
+        }
+        stage('Terraform Validate') {
+            steps {
+                sh 'terraform validate'
+            }
+        }
+        stage('Terraform Apply ') {
+            steps {
+                sh 'terraform apply -auto-approve'
+            }
+        }
+    }
+    post {
+        cleanup {
+            script {
+                // Delete the SSH key file
+                sh 'rm -rf ${SECRET_DIR}'
+            }
+        }
+    }
+}

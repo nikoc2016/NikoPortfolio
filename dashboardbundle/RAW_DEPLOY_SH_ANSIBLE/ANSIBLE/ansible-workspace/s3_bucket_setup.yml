@@ -1,0 +1,52 @@
+---
+- name: S3 Bucket Connection
+  hosts: all
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Setup S3 Credentials
+      copy:
+        content: "{AWS_TOKENAME}:{AWS_SECRET}"
+        dest: "{{ ansible_env.HOME }}/.passwd-s3fs"
+        mode: '0600'
+      become: yes
+
+    - name: Install s3fs
+      apt:
+        name: s3fs
+        state: present
+        update_cache: yes
+      become: yes
+
+    - name: Create S3 mount dir
+      file:
+        path: "{{ s3_dir }}"
+        state: directory
+      become: yes
+
+    - name: Configure S3FS in fstab
+      blockinfile:
+        path: /etc/fstab
+        block: "s3fs#prometheus-spacec {{ s3_dir }} fuse _netdev,passwd_file={{ ansible_env.HOME }}/.passwd-s3fs,url=https://s3.us-west-1.amazonaws.com,use_path_request_style,allow_other,umask=000 0 0"
+      become: yes
+
+    - name: Mount S3 bucket
+      mount:
+        name: "{{ s3_dir }}"
+        src: "s3fs#prometheus-spacec"
+        fstype: fuse
+        opts: "_netdev,passwd_file={{ ansible_env.HOME }}/.passwd-s3fs,url=https://s3.us-west-1.amazonaws.com,use_path_request_style,allow_other,umask=000"
+        state: mounted
+      become: yes
+
+    - name: Create Provisioning Files Directory
+      file:
+        path: "{{ prov_files_dir }}"
+        state: directory
+
+    - name: Extract provisioning files
+      unarchive:
+        src: "{{ s3_dir }}/bin/{{ prov_files_tar }}"
+        dest: "{{ prov_files_dir }}"
+        remote_src: yes
+

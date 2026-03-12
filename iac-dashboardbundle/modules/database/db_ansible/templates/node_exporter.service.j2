@@ -1,0 +1,13 @@
+[Unit]
+Description={{ alias }}
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart={{ bin_dir }}/{{ app }}/{{ exe }} --web.listen-address=:9100 --collector.disable-defaults --collector.cpu --collector.loadavg --collector.xfs --collector.meminfo --collector.filesystem --collector.diskstats --collector.uname --collector.vmstat --collector.filesystem.fs-types-exclude="^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|tmpfs|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$" --collector.netdev --collector.stat --collector.tcpstat --collector.processes --collector.diskstats.device-exclude="^(ram|loop|fd|(h|s|v|xv)d[a-z]|nvmed+nd+p)d+$"
+WorkingDirectory={{ bin_dir }}/{{ app }}/
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+[Unit]
+Description={{ alias }}
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart={{ prom_bin_dir }}/{{ exe }}
+WorkingDirectory={{ prom_bin_dir }}
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

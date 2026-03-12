@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-app-service
+  namespace: dashboard
+spec:
+  selector:
+    app: dashboard-app
+  ports:
+  - name: http-9090
+    protocol: TCP
+    port: 9090
+    targetPort: 9090
+  - name: http-80
+    protocol: TCP
+    port: 80
+    targetPort: 3000
+  type: ClusterIP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800 # 3 hours
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: dashboard
+spec:
+  type: ExternalName
+  externalName: db.deploycluster

@@ -1,0 +1,15 @@
+namespace: dashboard
+appName: dashboard-app
+minReplicas: 1
+maxReplicas: 10
+cpuUsageMax: 90
+Replicas: 2
+image: nikoc2016/dashboard-app
+tag: latest
+prometheusPort: 9090
+grafanaPort: 3000
+defaultPort: 80
+dbServiceName: db
+dbOriginalUrl: db.deploycluster
+grafanaHostname: dashboard.ikocs.net
+prometheusHostname: pro.dashboard.ikocs.net

@@ -1,0 +1,33 @@
+# Service for the application
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.appName }}-service
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    app: {{ .Values.appName }}
+  ports:
+  - name: http-9090
+    protocol: TCP
+    port: {{ .Values.prometheusPort }}
+    targetPort: {{ .Values.prometheusPort }}
+  - name: http-80
+    protocol: TCP
+    port: {{ .Values.defaultPort }}
+    targetPort: {{ .Values.grafanaPort }}
+  type: ClusterIP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800 # 3 hours
+---
+# ExternalName Service for the database
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.dbServiceName }}
+  namespace: {{ .Values.namespace }}
+spec:
+  type: ExternalName
+  externalName: {{ .Values.dbOriginalUrl }}

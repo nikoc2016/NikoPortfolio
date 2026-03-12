@@ -1,0 +1,102 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_IMAGE = "nikoc2016/dashboard-app"
+        DOCKER_TAG_BASE = "1.0"
+        DOCKER_TAG_BUILD = "${env.BUILD_NUMBER}"
+        EKS_NAME = "dashboard-net-eks"
+        REGION = "us-west-1"
+        KUBECTL = "/usr/local/bin/kubectl"
+        AWS_CLI = "/usr/local/bin/aws"
+        HELM = "/usr/local/bin/helm"
+    }
+
+    stages {
+        stage('Checkout Dashboard Bundle') {
+            steps {
+                git branch: 'deploy', url: 'https://git.ikocs.net/root/dashboardbundle.git'
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                script {
+                    sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG_BASE}.${DOCKER_TAG_BUILD} ."
+                }
+            }
+        }
+        
+        stage('Docker Login') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                        sh "docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD"
+                    }
+                }
+            }
+        }
+
+        stage('Docker Push') {
+            steps {
+                script {
+                    sh "docker push ${DOCKER_IMAGE}:${DOCKER_TAG_BASE}.${DOCKER_TAG_BUILD}"
+                }
+            }
+        }
+
+        stage('Export Credentials') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'AWS']]) {
+                    script {
+                        env.AWS_ACCESS_KEY_ID = "${AWS_ACCESS_KEY_ID}"
+                        env.AWS_SECRET_ACCESS_KEY = "${AWS_SECRET_ACCESS_KEY}"
+                    }
+                }
+            }
+        }
+        
+        stage('Update kubeconfig for EKS') {
+            steps {
+                script {
+                    sh "${AWS_CLI} eks update-kubeconfig --region ${REGION} --name ${EKS_NAME}"
+                }
+            }
+        }
+
+        stage('Install NGINX Ingress Controller') {
+            steps {
+                script {
+                    sh "${KUBECTL} apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/aws/deploy.yaml"
+                }
+            }
+        }
+
+        stage('Checkout CICD Dashboard Bundle') {
+            steps {
+                git branch: 'deploy', url: 'https://git.ikocs.net/root/cicd-dashboardbundle.git'
+            }
+        }
+
+        stage('Deploy with Helm') {
+            steps {
+                dir('helm') {
+                    script {
+                        // Verify the current directory and list files for debugging
+                        sh 'pwd && ls -la'
+                        sh "${HELM} upgrade --install dashboard . --set tag=${DOCKER_TAG_BASE}.${DOCKER_TAG_BUILD}"
+                    }
+                }
+            }
+        }
+
+    }
+    post {
+        success {
+            echo 'Pipeline executed successfully.'
+        }
+        failure {
+            echo 'Pipeline failed.'
+        }
+    }
+}

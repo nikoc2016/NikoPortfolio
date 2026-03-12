@@ -1,0 +1,218 @@
+---
+- name: Set up Docker and MySQL on DB servers
+  hosts: db_servers
+  vars_files:
+    - vars.yml  # Assuming vars.yml is created and accessible
+
+  tasks:
+    - name: Install prerequisites
+      apt:
+        name:
+          - ca-certificates
+          - curl
+        state: present
+        update_cache: yes
+      become: yes
+
+    - name: Create Docker keyring directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+      become: yes
+
+    - name: Add Docker GPG key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+      become: yes
+        
+    - name: Configure Docker repository
+      shell: |
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+      become: yes
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+      become: yes
+
+    - name: Install Docker packages
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+      become: yes
+
+    - name: Add user to Docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+      become: yes
+      
+    - name: Reset ssh connection to allow user changes to affect ansible user
+      ansible.builtin.meta:
+        reset_connection
+
+    - name: Create Docker network 'monitor_net'
+      docker_network:
+        name: monitor_net
+        state: present
+
+    - name: Install MySQL client
+      apt:
+        name: mysql-client
+        state: present
+      become: yes
+
+    - name: Create MySQL initialization scripts directory
+      file:
+        path: "{{ mysql_script_dir }}"
+        state: directory
+
+    - name: Create MySQL initialization script
+      copy:
+        content: |
+          CREATE USER '{{ mysql_exp_user }}'@'%' IDENTIFIED BY '{{ mysql_exp_passwd }}';
+          GRANT PROCESS, REPLICATION CLIENT, SELECT ON *.* TO '{{ mysql_exp_user }}'@'%';
+          FLUSH PRIVILEGES;
+        dest: "{{ mysql_script_dir }}/init.sql"
+
+    - name: Ensure MySQL data directory exists
+      file:
+        path: "{{ mysql_data_dir }}"
+        state: directory
+
+    - name: Run MySQL Docker container
+      docker_container:
+        name: mysql8
+        image: mysql:8.0.33
+        state: started
+        restart_policy: always
+        network_mode: monitor_net
+        ports:
+          - "3306:3306"
+        env:
+          MYSQL_ROOT_PASSWORD: "{{ mysql_root_passwd }}"
+          MYSQL_DATABASE: project
+        volumes:
+          - "{{ mysql_data_dir }}:/var/lib/mysql"
+          - "{{ prov_files_dir }}/initdb_scripts/:/docker-entrypoint-initdb.d/"
+          
+    - name: Prepare MySQL Exporter directories
+      file:
+        path: "{{ mysql_exp_dir }}"
+        state: directory
+
+    - name: Configure MySQL Exporter .my.cnf file
+      template:
+        src: templates/my.cnf.j2
+        dest: "{{ mysql_exp_conf_path }}"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+
+    - name: Run MySQL Exporter Docker container
+      docker_container:
+        name: mysql-exporter
+        image: prom/mysqld-exporter
+        state: started
+        restart_policy: always
+        network_mode: monitor_net
+        ports:
+          - "9104:9104"
+        volumes:
+          - "{{ mysql_exp_conf_path }}:/cfg/.my.cnf"
+        command: "--config.my-cnf=/cfg/.my.cnf \
+                  --collect.global_status \
+                  --collect.info_schema.innodb_metrics \
+                  --collect.auto_increment.columns \
+                  --collect.info_schema.processlist \
+                  --collect.binlog_size \
+                  --collect.info_schema.tablestats \
+                  --collect.global_variables \
+                  --collect.info_schema.query_response_time \
+                  --collect.info_schema.userstats \
+                  --collect.info_schema.tables \
+                  --collect.perf_schema.tablelocks \
+                  --collect.perf_schema.file_events \
+                  --collect.perf_schema.eventswaits \
+                  --collect.perf_schema.indexiowaits \
+                  --collect.perf_schema.tableiowaits \
+                  --collect.slave_status"
+
+    - name: Install Redis tools
+      apt:
+        name: redis-tools
+        state: present
+      become: yes
+        
+    - name: Ensure REDIS conf directory exists
+      file:
+        path: "{{ redis_conf_dir }}"
+        state: directory
+
+    - name: Configure Redis
+      template:
+        src: templates/redis.conf.j2
+        dest: "{{ redis_conf_dir }}/{{ redis_conf_file }}"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+
+    - name: Run Redis Docker container
+      docker_container:
+        name: redis7
+        image: redis:7.2.5
+        state: started
+        restart_policy: always
+        network_mode: monitor_net
+        ports:
+          - "6379:6379"
+        volumes:
+          - "{{ redis_data_dir }}:/data"
+          - "{{ redis_conf_dir }}:/etc/redis/"
+        command: "/etc/redis/{{ redis_conf_file }}"
+        
+    - name: Ensure BIN directory exists
+      file:
+        path: "{{ bin_dir }}"
+        state: directory
+
+    - name: Set variables for Node Exporter
+      ansible.builtin.set_fact:
+        app: "node_exporter-1.8.1.linux-amd64"
+        type: ".tar.gz"
+        alias: "node_exporter"
+        exe: "node_exporter"
+        
+    - name: Download Node Exporter binaries
+      unarchive:
+        src: "{{ prov_files_dir }}/node_exporter-1.8.1.linux-amd64.tar.gz"
+        dest: "{{ bin_dir }}"
+        remote_src: yes
+        
+    - name: Create systemd service file for Node Exporter
+      ansible.builtin.template:
+        src: "node_exporter.service.j2"
+        dest: "/etc/systemd/system/{{ alias }}.service"
+        mode: '0644'
+      become: yes
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: yes
+      become: yes
+
+    - name: Restart and enable Node Exporter service
+      ansible.builtin.systemd:
+        name: "{{ alias }}"
+        state: restarted
+        enabled: yes
+      become: yes

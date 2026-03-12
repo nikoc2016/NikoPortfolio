@@ -1,0 +1,135 @@
+---
+- name: Setup APP server
+  hosts: app_servers
+  vars_files:
+    - vars.yml
+    
+  tasks:
+    - name: Update apt cache
+      become: yes
+      ansible.builtin.apt:
+        update_cache: yes
+  
+    - name: Install required packages
+      apt:
+        name:
+          - golang-go
+          - make
+          - npm
+          - nodejs
+        state: latest
+        update_cache: yes
+      become: yes
+        
+    - name: Ensure prom_src_dir exists
+      file:
+        path: "{{ prom_src_dir }}"
+        state: directory
+
+    - name: Clone Prometheus source
+      git:
+        repo: 'https://github.com/nikoc2016/prometheus.git'
+        dest: "{{ prom_src_dir }}"
+        clone: yes
+        update: yes
+
+    - name: Build Prometheus from source
+      make:
+        chdir: "{{ prom_src_dir }}"
+        target: build
+        
+    - name: Ensure prom_bin_dir exists
+      file:
+        path: "{{ prom_bin_dir }}"
+        state: directory
+
+    - name: Copy Prometheus binaries and configuration files
+      copy:
+        src: "{{ prom_src_dir }}/{{ item.src }}"
+        dest: "{{ prom_bin_dir }}/{{ item.dest }}"
+        remote_src: yes
+        mode: preserve
+      with_items:
+        - { src: 'console_libraries', dest: 'console_libraries' }
+        - { src: 'consoles', dest: 'consoles' }
+        - { src: 'promtool', dest: 'promtool' }
+        - { src: 'prometheus', dest: 'prometheus' }
+    
+    - name: Configure Prometheus.yml
+      template:
+        src: templates/prometheus.yml.j2
+        dest: "{{ prom_bin_dir }}/prometheus.yml"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0644'
+        
+    - name: Set variables for Prometheus
+      ansible.builtin.set_fact:
+        alias: "prometheus"
+        exe: "prometheus"
+        
+    - name: Create systemd service file for Prometheus
+      ansible.builtin.template:
+        src: "prometheus.service.j2"
+        dest: "/etc/systemd/system/{{ alias }}.service"
+        mode: '0644'
+      become: yes
+      
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: yes
+      become: yes
+
+    - name: Restart and enable Prometheus
+      ansible.builtin.systemd:
+        name: "{{ alias }}"
+        state: restarted
+        enabled: yes
+      become: yes
+      
+    - name: Ensure BIN directory exists
+      file:
+        path: "{{ bin_dir }}"
+        state: directory
+
+    - name: Set variables for Grafana
+      ansible.builtin.set_fact:
+        app: "grafana-11.0.0.linux-amd64"
+        type: ".tar.gz"
+        alias: "grafana"
+        exe: "bin/grafana server"
+        unzip_folder: "grafana-v11.0.0"
+        config_dir: "{{ prov_files_dir }}/grafana_config"
+        
+    - name: Download Grafana binaries
+      unarchive:
+        src: "{{ prov_files_dir }}/{{ app }}{{ type }}"
+        dest: "{{ bin_dir }}"
+        remote_src: yes
+        
+    - name: Create systemd service file for Grafana
+      ansible.builtin.template:
+        src: "grafana.service.j2"
+        dest: "/etc/systemd/system/{{ alias }}.service"
+        mode: '0644'
+      become: yes
+      
+    - name: Restore Grafana Setup
+      ansible.builtin.copy:
+        src: "{{ config_dir }}/"
+        dest: "{{ bin_dir }}/{{ unzip_folder }}"
+        remote_src: yes
+        mode: preserve
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: yes
+      become: yes
+
+    - name: Restart and enable Grafana
+      ansible.builtin.systemd:
+        name: "{{ alias }}"
+        state: restarted
+        enabled: yes
+      become: yes
+        

@@ -1,0 +1,13 @@
+[Unit]
+Description={{ alias }}
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart={{ bin_dir }}/{{ unzip_folder }}/{{ exe }}
+WorkingDirectory={{ bin_dir }}/{{ unzip_folder }}
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
